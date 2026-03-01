@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(ipconfig)",
+      "Bash(chmod +x c:/Users/Usuario/projects/mini/screen-use/run.sh)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Usuario\\projects\\mini\\screen-use"
+    ]
+  }
+}

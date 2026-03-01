@@ -1,0 +1,55 @@
+Loading personal and system profiles took 8667ms.
+PS C:\WINDOWS\system32> New-NetFirewallRule -DisplayName "screen-use web" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+
+
+Name                          : {d2ac1b0a-16af-4d3a-acea-497d47ccf814}
+DisplayName                   : screen-use web
+Description                   :
+DisplayGroup                  :
+Group                         :
+Enabled                       : True
+Profile                       : Any
+Platform                      : {}
+Direction                     : Inbound
+Action                        : Allow
+EdgeTraversalPolicy           : Block
+LooseSourceMapping            : False
+LocalOnlyMapping              : False
+Owner                         :
+PrimaryStatus                 : OK
+Status                        : The rule was parsed successfully from the store. (65536)
+EnforcementStatus             : NotApplicable
+PolicyStoreSource             : PersistentStore
+PolicyStoreSourceType         : Local
+RemoteDynamicKeywordAddresses : {}
+PolicyAppId                   :
+PackageFamilyName             :
+
+
+
+PS C:\WINDOWS\system32> New-NetFirewallRule -DisplayName "screen-use api" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+
+
+Name                          : {9ae891eb-2395-4f8b-b985-9946c9b67fa3}
+DisplayName                   : screen-use api
+Description                   :
+DisplayGroup                  :
+Group                         :
+Enabled                       : True
+Profile                       : Any
+Platform                      : {}
+Direction                     : Inbound
+Action                        : Allow
+EdgeTraversalPolicy           : Block
+LooseSourceMapping            : False
+LocalOnlyMapping              : False
+Owner                         :
+PrimaryStatus                 : OK
+Status                        : The rule was parsed successfully from the store. (65536)
+EnforcementStatus             : NotApplicable
+PolicyStoreSource             : PersistentStore
+PolicyStoreSourceType         : Local
+RemoteDynamicKeywordAddresses : {}
+PolicyAppId                   :
+PackageFamilyName             :
+

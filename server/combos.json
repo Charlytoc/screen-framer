@@ -1,0 +1,19 @@
+[
+  {
+    "name": "Toggle chat",
+    "keys": [
+      "ctrl",
+      "alt",
+      "b"
+    ],
+    "id": "67e349c3"
+  },
+  {
+    "name": "Toggle terminal",
+    "keys": [
+      "ctrl",
+      "j"
+    ],
+    "id": "dab0d56f"
+  }
+]
