@@ -1,0 +1,61 @@
+# Next steps: secure remote access for screen-use
+
+This project controls your desktop input (keyboard/mouse), so treat remote access as high risk and lock it down.
+
+## 1) Best first step: use Tailscale private network
+
+Goal: access your app from phone outside home without exposing public ports.
+
+1. Install Tailscale on your Windows host PC.
+2. Install Tailscale on your phone.
+3. Sign in both devices with the same identity provider account (Google/Microsoft/GitHub/etc).
+4. Confirm both devices show as connected in the Tailscale admin panel.
+5. On your PC, run your app as usual:
+   - Web: `:3000`
+   - API: `:8000`
+6. Open on phone: `http://<PC_TAILSCALE_IP>:3000`
+   - Example IP format: `100.x.y.z`
+
+Result: same behavior as local Wi-Fi, but through a private encrypted mesh.
+
+## 2) About "username + password"
+
+Important: Tailscale does not usually protect your app with a separate app username/password screen by default.
+It protects access at the network identity level (who is allowed in your tailnet).
+
+You have two options:
+
+- Option A (simpler): Tailscale-only auth
+  - Use Tailscale account login + device approval + ACL rules.
+  - Good for personal use and small trusted device sets.
+
+- Option B (stronger): Tailscale + app login
+  - Keep Tailscale private network.
+  - Also add app auth in your server (username/password, session cookie, and WS token checks).
+  - Best if you want a login screen in your app itself.
+
+## 3) Minimum hardening checklist (recommended)
+
+- Restrict Tailscale ACL to only your phone + PC.
+- Enable MFA on your identity provider account.
+- Do not expose ports 3000/8000 publicly on router or ngrok while testing.
+- Add inactivity timeout in app UI (auto-disconnect behavior).
+- Add server-side auth before sharing with anyone else.
+
+## 4) If you want app login (username/password) next
+
+Suggested implementation order:
+
+1. Add `POST /auth/login` in FastAPI (verify username/password).
+2. Create signed session token (short expiry).
+3. Require token for:
+   - REST endpoints (`/frames`, `/combos`, etc.)
+   - WebSocket connect (`/ws/client` and possibly `/ws/agent` with separate secret)
+4. In `web`, add login page and attach token to API + WS requests.
+5. Add logout + token expiration handling.
+
+## 5) Reality check for this codebase
+
+Current code has no auth and open CORS (`allow_origins=["*"]`), so do not expose it to the public internet yet.
+Tailscale is the safest immediate path with minimal code changes.
+

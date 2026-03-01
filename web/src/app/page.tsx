@@ -30,6 +30,15 @@ export default function Home() {
   const [drawMode,      setDrawMode]      = useState(false);
   const [namingRect,    setNamingRect]    = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [newFrameName,  setNewFrameName]  = useState("");
+  const [framesOpen,    setFramesOpen]    = useState(true);
+  const [winW,          setWinW]          = useState(0);
+
+  useEffect(() => {
+    const update = () => setWinW(window.innerWidth);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   useEffect(() => {
     getMonitors().then((m) => {
@@ -38,6 +47,8 @@ export default function Home() {
     });
     getFrames().then(setFrames);
   }, []);
+
+  const isTablet = winW >= 768;
 
   function handleFrameDraw(rect: { x: number; y: number; width: number; height: number }) {
     setNamingRect(rect);
@@ -135,14 +146,100 @@ export default function Home() {
         </Button>
       </Group>
 
-      {/* Video */}
-      <Box style={{ flex: 1, minHeight: 0, position: "relative" }}>
-        <VideoStream
-          stream={stream}
-          monitor={activeMonitor}
-          drawMode={drawMode}
-          onFrameDraw={handleFrameDraw}
-        />
+      {/* Content: video + frames (side-by-side on tablet, stacked on mobile) */}
+      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isTablet ? "row" : "column" }}>
+
+        {/* Video */}
+        <Box style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
+          <VideoStream
+            stream={stream}
+            monitor={activeMonitor}
+            drawMode={drawMode}
+            onFrameDraw={handleFrameDraw}
+          />
+        </Box>
+
+        {/* Frames — sidebar on tablet, strip on mobile */}
+        {frames.length > 0 && activeMonitor && (
+          isTablet ? (
+            /* ── TABLET: right sidebar ── */
+            <Box style={{
+              width:        framesOpen ? 224 : 32,
+              flexShrink:   0,
+              display:      "flex",
+              flexDirection: "column",
+              borderLeft:   "1px solid #1f1f1f",
+              background:   "#0e0e0e",
+              overflow:     "hidden",
+              transition:   "width 0.2s ease",
+            }}>
+              {/* Sidebar toggle tab */}
+              <Box
+                title={framesOpen ? "Collapse frames" : "Expand frames"}
+                onClick={() => setFramesOpen((o) => !o)}
+                style={{
+                  flexShrink:     0,
+                  display:        "flex",
+                  alignItems:     "center",
+                  justifyContent: framesOpen ? "space-between" : "center",
+                  padding:        framesOpen ? "6px 12px" : "10px 0",
+                  borderBottom:   "1px solid #1a1a1a",
+                  cursor:         "pointer",
+                  userSelect:     "none",
+                  whiteSpace:     "nowrap",
+                }}
+              >
+                {framesOpen && <Text fz={11} c="#666">FRAMES ({frames.length})</Text>}
+                <Text fz={11} c="#555">{framesOpen ? "›" : "‹"}</Text>
+              </Box>
+              {framesOpen && (
+                <ScrollArea style={{ flex: 1 }} type="hover" offsetScrollbars scrollbarSize={6}>
+                  <Stack gap={10} p={12}>
+                    {frames.map((f) => (
+                      <FrameCard
+                        key={f.id}
+                        frame={f}
+                        monitor={activeMonitor}
+                        stream={stream}
+                        onSelect={() => setExpandedFrame(f)}
+                        onDelete={() => handleDeleteFrame(f.id)}
+                      />
+                    ))}
+                  </Stack>
+                </ScrollArea>
+              )}
+            </Box>
+          ) : (
+            /* ── MOBILE: bottom strip ── */
+            <Box style={{ flexShrink: 0, borderTop: "1px solid #1f1f1f", background: "#0e0e0e" }}>
+              <Group
+                px={16} py={6} gap={8}
+                style={{ borderBottom: framesOpen ? "1px solid #1a1a1a" : undefined, cursor: "pointer" }}
+                onClick={() => setFramesOpen((o) => !o)}
+              >
+                <Text fz={11} c="#666" style={{ userSelect: "none" }}>FRAMES ({frames.length})</Text>
+                <Box style={{ flex: 1 }} />
+                <Text fz={11} c="#555" style={{ userSelect: "none" }}>{framesOpen ? "▼" : "▲"}</Text>
+              </Group>
+              {framesOpen && (
+                <ScrollArea type="hover" offsetScrollbars scrollbarSize={8}>
+                  <Group gap={12} wrap="nowrap" px={16} py={12}>
+                    {frames.map((f) => (
+                      <FrameCard
+                        key={f.id}
+                        frame={f}
+                        monitor={activeMonitor}
+                        stream={stream}
+                        onSelect={() => setExpandedFrame(f)}
+                        onDelete={() => handleDeleteFrame(f.id)}
+                      />
+                    ))}
+                  </Group>
+                </ScrollArea>
+              )}
+            </Box>
+          )
+        )}
       </Box>
 
       {/* Name-frame dialog */}
@@ -176,26 +273,6 @@ export default function Home() {
           </Stack>
         )}
       </Modal>
-
-      {/* Frames strip */}
-      {frames.length > 0 && activeMonitor && (
-        <Box style={{ flexShrink: 0, borderTop: "1px solid #1f1f1f", background: "#0e0e0e" }}>
-          <ScrollArea type="hover" offsetScrollbars scrollbarSize={8}>
-            <Group gap={12} wrap="nowrap" px={16} py={12}>
-              {frames.map((f) => (
-                <FrameCard
-                  key={f.id}
-                  frame={f}
-                  monitor={activeMonitor}
-                  stream={stream}
-                  onSelect={() => setExpandedFrame(f)}
-                  onDelete={() => handleDeleteFrame(f.id)}
-                />
-              ))}
-            </Group>
-          </ScrollArea>
-        </Box>
-      )}
 
       {/* Expanded frame modal */}
       {expandedFrame && activeMonitor && (

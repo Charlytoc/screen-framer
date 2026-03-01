@@ -29,7 +29,7 @@ export function FrameCard({ frame, monitor, stream, onSelect, onDelete }: Props)
   }, [stream]);
 
   // Card display size (fixed width, proportional height)
-  const cardW   = 280;
+  const cardW   = 200;
   const aspect  = frame.height / frame.width;
   const cardH   = Math.round(cardW * aspect);
 
