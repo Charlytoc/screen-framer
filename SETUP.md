@@ -54,3 +54,28 @@ or **http://<your-PC-local-IP>:3000** from your phone/tablet on the same Wi-Fi.
 ```powershell
 ipconfig | findstr "IPv4"
 ```
+
+---
+
+## Remote access via Tailscale
+
+Tailscale creates a private encrypted mesh between your devices — no public ports, no cloud relay.
+
+**One-time setup:**
+1. Install Tailscale on your Windows PC: https://tailscale.com/download/windows
+2. Install Tailscale on your phone (iOS/Android app store).
+3. Sign in to both with the same account (Google / GitHub / Microsoft).
+4. Confirm both devices appear in your Tailscale admin panel.
+
+**Get your PC's Tailscale IP:**
+```powershell
+tailscale ip -4
+```
+It will look like `100.x.y.z`.
+
+**Run the app exactly as above** (no changes). Then open on your phone:
+```
+http://100.x.y.z:3000
+```
+
+That's it. The web app auto-detects the host IP, so API and WebSocket will automatically point to `100.x.y.z:8000`.

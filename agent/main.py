@@ -188,9 +188,11 @@ async def run():
             if kind == "offer":
                 print("[agent] Received WebRTC offer")
 
-                # Clean up any previous peer connection
+                # Close previous peer connection without awaiting — avoids
+                # aiortc's internal __connect task racing with the close and
+                # logging a spurious "Task exception was never retrieved".
                 if pc:
-                    await pc.close()
+                    asyncio.ensure_future(pc.close())
 
                 pc = RTCPeerConnection()
                 pc.addTrack(track)

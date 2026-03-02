@@ -15,5 +15,14 @@
       "j"
     ],
     "id": "dab0d56f"
+  },
+  {
+    "name": "Delete all text",
+    "keys": [
+      "ctrl",
+      "a",
+      "backspace"
+    ],
+    "id": "0a0a4805"
   }
 ]

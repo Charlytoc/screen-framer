@@ -1,13 +1,14 @@
 "use client";
 /**
  * VideoStream
- * Shows the live WebRTC feed. In "draw" mode the user can click-drag
- * to select a rectangle → becomes a new Observation Frame.
+ * Shows the live WebRTC feed. In "draw" mode the user adjusts 4 edge handles
+ * (iOS-style crop UI) to define a frame region, then taps "Save region".
  */
 import { useEffect, useRef, useState } from "react";
 import type { MonitorInfo } from "@/lib/types";
 
-interface DrawRect { x: number; y: number; w: number; h: number }
+type Edge = "top" | "bottom" | "left" | "right";
+interface Crop { x1: number; y1: number; x2: number; y2: number }
 
 interface Props {
   stream:      MediaStream | null;
@@ -16,74 +17,61 @@ interface Props {
   onFrameDraw: (rect: { x: number; y: number; width: number; height: number }) => void;
 }
 
+const HANDLE = 36; // px — touch target size for each edge handle
+
 export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
   const videoRef     = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragOrigin   = useRef<{ rx: number; ry: number } | null>(null);
-  const [selection, setSelection] = useState<DrawRect | null>(null);
+  const activeEdge   = useRef<Edge | null>(null);
+  const [crop, setCrop] = useState<Crop>({ x1: 0.1, y1: 0.1, x2: 0.9, y2: 0.9 });
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
+    if (videoRef.current && stream) videoRef.current.srcObject = stream;
   }, [stream]);
 
-  function clientPos(clientX: number, clientY: number) {
+  // Reset crop to a centered default whenever draw mode is entered
+  useEffect(() => {
+    if (drawMode) setCrop({ x1: 0.1, y1: 0.1, x2: 0.9, y2: 0.9 });
+  }, [drawMode]);
+
+  function clientFrac(clientX: number, clientY: number) {
     const r = containerRef.current!.getBoundingClientRect();
     return {
-      rx: (clientX - r.left) / r.width,
-      ry: (clientY - r.top)  / r.height,
+      rx: Math.max(0, Math.min(1, (clientX - r.left) / r.width)),
+      ry: Math.max(0, Math.min(1, (clientY - r.top)  / r.height)),
     };
   }
 
-  function startDrag(clientX: number, clientY: number) {
-    if (!drawMode) return;
-    dragOrigin.current = clientPos(clientX, clientY);
-    setSelection(null);
-  }
-
-  function moveDrag(clientX: number, clientY: number) {
-    if (!drawMode || !dragOrigin.current) return;
-    const { rx, ry } = clientPos(clientX, clientY);
-    const ox = dragOrigin.current.rx;
-    const oy = dragOrigin.current.ry;
-    setSelection({
-      x: Math.min(ox, rx), y: Math.min(oy, ry),
-      w: Math.abs(rx - ox), h: Math.abs(ry - oy),
+  function moveEdge(clientX: number, clientY: number) {
+    const edge = activeEdge.current;
+    if (!edge) return;
+    const { rx, ry } = clientFrac(clientX, clientY);
+    const MIN = 0.05;
+    setCrop(prev => {
+      switch (edge) {
+        case "top":    return { ...prev, y1: Math.min(prev.y2 - MIN, Math.max(0, ry)) };
+        case "bottom": return { ...prev, y2: Math.max(prev.y1 + MIN, Math.min(1, ry)) };
+        case "left":   return { ...prev, x1: Math.min(prev.x2 - MIN, Math.max(0, rx)) };
+        case "right":  return { ...prev, x2: Math.max(prev.x1 + MIN, Math.min(1, rx)) };
+      }
     });
   }
 
-  function endDrag() {
-    if (!drawMode || !dragOrigin.current || !selection || !monitor) return;
-    if (selection.w < 0.02 || selection.h < 0.02) {
-      setSelection(null);
-      dragOrigin.current = null;
-      return;
-    }
-
-    // The video uses objectFit:"contain", so it may have letterbox bars.
-    // Compute the actual painted-video rect as fractions of the container.
+  function confirmCrop() {
+    if (!monitor) return;
     const { width: cw, height: ch } = containerRef.current!.getBoundingClientRect();
     const monAspect = monitor.width / monitor.height;
     const conAspect = cw / ch;
-    let lx = 0, ly = 0, lw = 1, lh = 1; // letterbox region [0..1] in container space
-    if (conAspect > monAspect) {
-      // container wider than monitor → bars on left & right
-      lw = monAspect / conAspect;
-      lx = (1 - lw) / 2;
-    } else {
-      // container taller than monitor → bars on top & bottom
-      lh = conAspect / monAspect;
-      ly = (1 - lh) / 2;
-    }
+    let lx = 0, ly = 0, lw = 1, lh = 1;
+    if (conAspect > monAspect) { lw = monAspect / conAspect; lx = (1 - lw) / 2; }
+    else                       { lh = conAspect / monAspect; ly = (1 - lh) / 2; }
 
-    // Remap selection corners from container-space to monitor-space [0..1]
     const toMon = (rx: number, ry: number) => ({
       mx: Math.max(0, Math.min(1, (rx - lx) / lw)),
       my: Math.max(0, Math.min(1, (ry - ly) / lh)),
     });
-    const { mx: mx1, my: my1 } = toMon(selection.x, selection.y);
-    const { mx: mx2, my: my2 } = toMon(selection.x + selection.w, selection.y + selection.h);
+    const { mx: mx1, my: my1 } = toMon(crop.x1, crop.y1);
+    const { mx: mx2, my: my2 } = toMon(crop.x2, crop.y2);
 
     onFrameDraw({
       x:      Math.round(mx1 * monitor.width),
@@ -91,44 +79,38 @@ export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
       width:  Math.round((mx2 - mx1) * monitor.width),
       height: Math.round((my2 - my1) * monitor.height),
     });
-    dragOrigin.current = null;
-    setSelection(null);
   }
 
-  // Mouse
-  function onMouseDown(e: React.MouseEvent) { e.preventDefault(); startDrag(e.clientX, e.clientY); }
-  function onMouseMove(e: React.MouseEvent) { moveDrag(e.clientX, e.clientY); }
-  function onMouseUp(e:   React.MouseEvent) { e.preventDefault(); endDrag(); }
+  // ── Edge handle helpers ─────────────────────────────────────────────────────
 
-  // Touch
-  function onTouchStart(e: React.TouchEvent) { if (drawMode) e.preventDefault(); startDrag(e.touches[0].clientX, e.touches[0].clientY); }
-  function onTouchMove(e:  React.TouchEvent) { if (drawMode) e.preventDefault(); moveDrag(e.touches[0].clientX, e.touches[0].clientY); }
-  function onTouchEnd(e:   React.TouchEvent) { if (drawMode) e.preventDefault(); endDrag(); }
+  function edgeHandleProps(edge: Edge) {
+    return {
+      onMouseDown: (e: React.MouseEvent)  => { e.preventDefault(); e.stopPropagation(); activeEdge.current = edge; },
+      onTouchStart:(e: React.TouchEvent)  => { e.preventDefault(); e.stopPropagation(); activeEdge.current = edge; },
+    };
+  }
+
+  const { x1, y1, x2, y2 } = crop;
+  const cw = `${(x2 - x1) * 100}%`;
+  const ch = `${(y2 - y1) * 100}%`;
 
   return (
     <div
       ref={containerRef}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
+      onMouseMove={(e) => { if (drawMode && activeEdge.current) moveEdge(e.clientX, e.clientY); }}
+      onMouseUp={() => { activeEdge.current = null; }}
+      onMouseLeave={() => { activeEdge.current = null; }}
+      onTouchMove={(e) => { if (drawMode && activeEdge.current) { e.preventDefault(); moveEdge(e.touches[0].clientX, e.touches[0].clientY); } }}
+      onTouchEnd={() => { activeEdge.current = null; }}
       style={{
-        position:   "relative",
-        width:      "100%",
-        height:     "100%",
-        background: "#000",
-        overflow:   "hidden",
-        cursor:     drawMode ? "crosshair" : "default",
-        userSelect: "none",
+        position: "relative", width: "100%", height: "100%",
+        background: "#000", overflow: "hidden",
+        userSelect: "none", WebkitUserSelect: "none",
       }}
     >
       <video
         ref={videoRef}
-        autoPlay
-        playsInline
-        muted
+        autoPlay playsInline muted
         style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
       />
 
@@ -142,28 +124,107 @@ export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
         </div>
       )}
 
-      {drawMode && selection && (
-        <div style={{
-          position:        "absolute",
-          left:            `${selection.x * 100}%`,
-          top:             `${selection.y * 100}%`,
-          width:           `${selection.w * 100}%`,
-          height:          `${selection.h * 100}%`,
-          border:          "2px solid #3b82f6",
-          background:      "rgba(59,130,246,0.12)",
-          pointerEvents:   "none",
-          boxSizing:       "border-box",
-        }} />
-      )}
-
       {drawMode && (
-        <div style={{
-          position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(59,130,246,0.9)", color: "#fff",
-          padding: "4px 12px", borderRadius: 20, fontSize: 12, pointerEvents: "none",
-        }}>
-          Drag to define a frame
-        </div>
+        <>
+          {/* ── Darkened overlay outside the crop ─────────────────────────── */}
+          {/* top */}
+          <div style={{ position: "absolute", inset: 0, bottom: `${(1 - y1) * 100}%`, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
+          {/* bottom */}
+          <div style={{ position: "absolute", inset: 0, top: `${y2 * 100}%`, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
+          {/* left */}
+          <div style={{ position: "absolute", top: `${y1 * 100}%`, bottom: `${(1 - y2) * 100}%`, left: 0, width: `${x1 * 100}%`, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
+          {/* right */}
+          <div style={{ position: "absolute", top: `${y1 * 100}%`, bottom: `${(1 - y2) * 100}%`, right: 0, width: `${(1 - x2) * 100}%`, background: "rgba(0,0,0,0.55)", pointerEvents: "none" }} />
+
+          {/* ── Crop border ─────────────────────────────────────────────────── */}
+          <div style={{
+            position: "absolute",
+            left: `${x1 * 100}%`, top: `${y1 * 100}%`,
+            width: cw, height: ch,
+            border: "1.5px solid rgba(255,255,255,0.85)",
+            boxSizing: "border-box", pointerEvents: "none",
+          }} />
+
+          {/* ── Rule-of-thirds grid (subtle) ─────────────────────────────── */}
+          {[1, 2].map(i => (
+            <div key={`gv${i}`} style={{
+              position: "absolute",
+              left: `${(x1 + (x2 - x1) * i / 3) * 100}%`,
+              top: `${y1 * 100}%`, width: 1, height: ch,
+              background: "rgba(255,255,255,0.15)", pointerEvents: "none",
+            }} />
+          ))}
+          {[1, 2].map(i => (
+            <div key={`gh${i}`} style={{
+              position: "absolute",
+              top: `${(y1 + (y2 - y1) * i / 3) * 100}%`,
+              left: `${x1 * 100}%`, height: 1, width: cw,
+              background: "rgba(255,255,255,0.15)", pointerEvents: "none",
+            }} />
+          ))}
+
+          {/* ── Edge handles ────────────────────────────────────────────────── */}
+
+          {/* Top */}
+          <div {...edgeHandleProps("top")} style={{
+            position: "absolute", cursor: "ns-resize",
+            left: `${x1 * 100}%`, top: `${y1 * 100}%`,
+            width: cw, height: HANDLE,
+            transform: "translateY(-50%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ width: 44, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.9)" }} />
+          </div>
+
+          {/* Bottom */}
+          <div {...edgeHandleProps("bottom")} style={{
+            position: "absolute", cursor: "ns-resize",
+            left: `${x1 * 100}%`, top: `${y2 * 100}%`,
+            width: cw, height: HANDLE,
+            transform: "translateY(-50%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ width: 44, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.9)" }} />
+          </div>
+
+          {/* Left */}
+          <div {...edgeHandleProps("left")} style={{
+            position: "absolute", cursor: "ew-resize",
+            left: `${x1 * 100}%`, top: `${y1 * 100}%`,
+            width: HANDLE, height: ch,
+            transform: "translateX(-50%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ width: 4, height: 44, borderRadius: 2, background: "rgba(255,255,255,0.9)" }} />
+          </div>
+
+          {/* Right */}
+          <div {...edgeHandleProps("right")} style={{
+            position: "absolute", cursor: "ew-resize",
+            left: `${x2 * 100}%`, top: `${y1 * 100}%`,
+            width: HANDLE, height: ch,
+            transform: "translateX(-50%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ width: 4, height: 44, borderRadius: 2, background: "rgba(255,255,255,0.9)" }} />
+          </div>
+
+          {/* ── Confirm button ───────────────────────────────────────────────── */}
+          <button
+            onClick={confirmCrop}
+            style={{
+              position: "absolute", bottom: 20, left: "50%",
+              transform: "translateX(-50%)",
+              padding: "10px 28px", borderRadius: 24,
+              border: "none", background: "#3b82f6", color: "#fff",
+              fontSize: 15, fontWeight: 600, cursor: "pointer",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
+              zIndex: 10,
+            }}
+          >
+            Save region
+          </button>
+        </>
       )}
     </div>
   );
