@@ -1,10 +1,10 @@
 import type { MonitorInfo, ObservationFrame, KeyCombo } from "./types";
 
 // Automatically uses the same host the browser loaded from.
-// When opening from phone: http://192.168.x.x:3000 → points to :8000 on same IP.
+// When opening from phone: http://192.168.x.x:9001 → points to :9000 on same IP.
 const HOST = typeof window !== "undefined" ? window.location.hostname : "localhost";
-export const API  = `http://${HOST}:8000`;
-export const WS   = `ws://${HOST}:8000/ws/client`;
+export const API  = `http://${HOST}:9000`;
+export const WS   = `ws://${HOST}:9000/ws/client`;
 
 export async function getMonitors(): Promise<MonitorInfo[]> {
   const r = await fetch(`${API}/monitors`);

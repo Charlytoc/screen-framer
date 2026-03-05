@@ -15,11 +15,12 @@ interface Props {
   monitor:     MonitorInfo | null;
   drawMode:    boolean;
   onFrameDraw: (rect: { x: number; y: number; width: number; height: number }) => void;
+  sendAction?: (action: Record<string, unknown>) => void;
 }
 
 const HANDLE = 36; // px — touch target size for each edge handle
 
-export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
+export function VideoStream({ stream, monitor, drawMode, onFrameDraw, sendAction }: Props) {
   const videoRef     = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeEdge   = useRef<Edge | null>(null);
@@ -81,6 +82,30 @@ export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
     });
   }
 
+  // ── Tap-to-click (normal mode) ──────────────────────────────────────────────
+
+  function handleTap(e: React.MouseEvent<HTMLDivElement>) {
+    if (drawMode || !sendAction || !monitor) return;
+    const rect = containerRef.current!.getBoundingClientRect();
+    const tapX = e.clientX - rect.left;
+    const tapY = e.clientY - rect.top;
+
+    // Letterbox offsets (same logic as confirmCrop)
+    const monAspect = monitor.width / monitor.height;
+    const conAspect = rect.width / rect.height;
+    let lx = 0, ly = 0, lw = 1, lh = 1;
+    if (conAspect > monAspect) { lw = monAspect / conAspect; lx = (1 - lw) / 2; }
+    else                       { lh = conAspect / monAspect; ly = (1 - lh) / 2; }
+
+    const rel_x = Math.max(0, Math.min(1, (tapX / rect.width  - lx) / lw));
+    const rel_y = Math.max(0, Math.min(1, (tapY / rect.height - ly) / lh));
+
+    sendAction({
+      type: "mouse_click", rel_x, rel_y, button: "left", clicks: 1,
+      monitor_width: monitor.width, monitor_height: monitor.height,
+    });
+  }
+
   // ── Edge handle helpers ─────────────────────────────────────────────────────
 
   function edgeHandleProps(edge: Edge) {
@@ -97,6 +122,7 @@ export function VideoStream({ stream, monitor, drawMode, onFrameDraw }: Props) {
   return (
     <div
       ref={containerRef}
+      onClick={handleTap}
       onMouseMove={(e) => { if (drawMode && activeEdge.current) moveEdge(e.clientX, e.clientY); }}
       onMouseUp={() => { activeEdge.current = null; }}
       onMouseLeave={() => { activeEdge.current = null; }}

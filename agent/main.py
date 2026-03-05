@@ -19,8 +19,8 @@ from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from av import VideoFrame
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-SERVER_URL = "http://localhost:8000"
-SERVER_WS  = "ws://localhost:8000/ws/agent"
+SERVER_URL = "http://localhost:9000"
+SERVER_WS  = "ws://localhost:9000/ws/agent"
 FPS        = 8
 CLOCK_RATE = 90000  # standard RTP clock rate for video
 
@@ -118,15 +118,20 @@ def handle_action(msg: dict, saved_frames: dict):
         pyautogui.hotkey(*keys)
 
     elif action_type == "mouse_click":
+        rel_x  = msg.get("rel_x", 0.5)
+        rel_y  = msg.get("rel_y", 0.5)
+        button = effective_button(msg.get("button", "left"))
+        clicks = msg.get("clicks", 1)
         if frame:
-            rel_x  = msg.get("rel_x", 0.5)
-            rel_y  = msg.get("rel_y", 0.5)
-            button = effective_button(msg.get("button", "left"))
-            clicks = msg.get("clicks", 1)
-            x, y   = resolve_coords(frame, rel_x, rel_y)
-            print(f"[agent] mouse_click at ({x}, {y}) button={button} clicks={clicks}")
-            pyautogui.click(x, y, button=button, clicks=clicks, interval=0.1)
-            flash_click(x, y)
+            x, y = resolve_coords(frame, rel_x, rel_y)
+        elif msg.get("monitor_width"):
+            x = int(rel_x * msg["monitor_width"])
+            y = int(rel_y * msg["monitor_height"])
+        else:
+            return
+        print(f"[agent] mouse_click at ({x}, {y}) button={button} clicks={clicks}")
+        pyautogui.click(x, y, button=button, clicks=clicks, interval=0.1)
+        flash_click(x, y)
 
     elif action_type == "scroll":
         if frame:
@@ -152,11 +157,10 @@ async def wait_for_ice(pc: RTCPeerConnection, timeout: float = 5.0):
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
 async def run():
-    saved_frames: dict = {}
     pc: RTCPeerConnection | None = None
     track = ScreenTrack(monitor_index=1)
 
-    # 1. Register with the API server
+    # 1. Build monitor info once
     monitors_info = []
     with mss.mss() as sct:
         for i, m in enumerate(sct.monitors[1:], start=1):
@@ -167,84 +171,91 @@ async def run():
                 "height": m["height"],
             })
 
-    async with httpx.AsyncClient() as client:
+    # 2. Main loop — reconnect WebSocket whenever it drops
+    while True:
+        # Register monitors with the server (re-register on each reconnect)
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.post(f"{SERVER_URL}/agent/register",
+                                  json={"monitors": monitors_info})
+                print(f"[agent] Registered. Monitors: {monitors_info}")
+            except Exception as e:
+                print(f"[agent] Could not reach server: {e}. Retrying in 3s…")
+                await asyncio.sleep(3)
+                continue
+
+        print(f"[agent] Connecting to {SERVER_WS} …")
         try:
-            await client.post(f"{SERVER_URL}/agent/register",
-                              json={"monitors": monitors_info})
-            print(f"[agent] Registered. Monitors: {monitors_info}")
-        except Exception as e:
-            print(f"[agent] Warning: could not register with server: {e}")
+            async with websockets.connect(SERVER_WS) as ws:
+                print("[agent] Connected. Waiting for browser client …")
+                saved_frames: dict = {}
 
-    # 2. Connect to signaling WebSocket and wait for commands
-    print(f"[agent] Connecting to {SERVER_WS} …")
-    async with websockets.connect(SERVER_WS) as ws:
-        print("[agent] Connected. Waiting for browser client …")
+                async for raw in ws:
+                    msg  = json.loads(raw)
+                    kind = msg.get("type")
 
-        async for raw in ws:
-            msg = json.loads(raw)
-            kind = msg.get("type")
+                    # ── WebRTC offer from browser ──────────────────────────────
+                    if kind == "offer":
+                        print("[agent] Received WebRTC offer")
 
-            # ── WebRTC offer from browser ──────────────────────────────────────
-            if kind == "offer":
-                print("[agent] Received WebRTC offer")
+                        # Fire-and-forget close so the old PC's internal tasks
+                        # don't race with the new connection setup.
+                        if pc:
+                            asyncio.ensure_future(pc.close())
 
-                # Close previous peer connection without awaiting — avoids
-                # aiortc's internal __connect task racing with the close and
-                # logging a spurious "Task exception was never retrieved".
-                if pc:
-                    asyncio.ensure_future(pc.close())
+                        pc = RTCPeerConnection()
+                        pc.addTrack(track)
 
-                pc = RTCPeerConnection()
-                pc.addTrack(track)
+                        await pc.setRemoteDescription(
+                            RTCSessionDescription(sdp=msg["sdp"], type=msg["type"])
+                        )
+                        answer = await pc.createAnswer()
+                        await pc.setLocalDescription(answer)
 
-                await pc.setRemoteDescription(
-                    RTCSessionDescription(sdp=msg["sdp"], type=msg["type"])
-                )
-                answer = await pc.createAnswer()
-                await pc.setLocalDescription(answer)
+                        await wait_for_ice(pc)
 
-                # Wait for ICE gathering so the answer SDP has all candidates
-                await wait_for_ice(pc)
-
-                await ws.send(json.dumps({
-                    "type": pc.localDescription.type,
-                    "sdp":  pc.localDescription.sdp,
-                }))
-                print("[agent] Answer sent")
-
-            # ── Trickle ICE candidates from browser ────────────────────────────
-            elif kind == "ice-candidate":
-                if pc and msg.get("candidate"):
-                    from aiortc import RTCIceCandidate
-                    from aiortc.contrib.signaling import object_from_string
-                    try:
-                        candidate = object_from_string(json.dumps({
-                            "type":      "candidate",
-                            "candidate": msg["candidate"],
+                        await ws.send(json.dumps({
+                            "type": pc.localDescription.type,
+                            "sdp":  pc.localDescription.sdp,
                         }))
-                        await pc.addIceCandidate(candidate)
-                    except Exception as e:
-                        print(f"[agent] ICE candidate error (non-fatal): {e}")
+                        print("[agent] Answer sent")
 
-            # ── Input actions ──────────────────────────────────────────────────
-            elif kind == "action":
-                # Refresh frames from server before acting
-                async with httpx.AsyncClient() as c:
-                    try:
-                        r = await c.get(f"{SERVER_URL}/frames")
-                        saved_frames = {f["id"]: f for f in r.json()}
-                    except Exception:
-                        pass
-                handle_action(msg, saved_frames)
+                    # ── Trickle ICE candidates from browser ───────────────────
+                    elif kind == "ice-candidate":
+                        if pc and msg.get("candidate"):
+                            from aiortc.contrib.signaling import object_from_string
+                            try:
+                                candidate = object_from_string(json.dumps({
+                                    "type":      "candidate",
+                                    "candidate": msg["candidate"],
+                                }))
+                                await pc.addIceCandidate(candidate)
+                            except Exception as e:
+                                print(f"[agent] ICE candidate error (non-fatal): {e}")
 
-            # ── Monitor switch ─────────────────────────────────────────────────
-            elif kind == "set_monitor":
-                idx = msg.get("monitor_id", 1)
-                track.set_monitor(idx)
-                print(f"[agent] Switched to monitor {idx}")
+                    # ── Input actions ──────────────────────────────────────────
+                    elif kind == "action":
+                        async with httpx.AsyncClient() as c:
+                            try:
+                                r = await c.get(f"{SERVER_URL}/frames")
+                                saved_frames = {f["id"]: f for f in r.json()}
+                            except Exception:
+                                pass
+                        handle_action(msg, saved_frames)
 
-            else:
-                print(f"[agent] Unknown message type: {kind}")
+                    # ── Monitor switch ─────────────────────────────────────────
+                    elif kind == "set_monitor":
+                        idx = msg.get("monitor_id", 1)
+                        track.set_monitor(idx)
+                        print(f"[agent] Switched to monitor {idx}")
+
+                    else:
+                        print(f"[agent] Unknown message type: {kind}")
+
+        except Exception as e:
+            print(f"[agent] WebSocket disconnected: {e}. Retrying in 3s…")
+
+        await asyncio.sleep(3)
 
 
 if __name__ == "__main__":

@@ -156,6 +156,7 @@ export default function Home() {
             monitor={activeMonitor}
             drawMode={drawMode}
             onFrameDraw={handleFrameDraw}
+            sendAction={sendAction}
           />
         </Box>
 

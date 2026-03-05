@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 echo "[run] Starting server..."
 cd "$ROOT/server"
-./venv/Scripts/python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+./venv/Scripts/python -m uvicorn main:app --host 0.0.0.0 --port 9000 &
 SERVER_PID=$!
 
 # Give the server a moment to bind before the agent tries to register
@@ -18,7 +18,7 @@ AGENT_PID=$!
 
 echo "[run] Starting Next.js..."
 cd "$ROOT/web"
-npm run dev -- -H 0.0.0.0 &
+npm run dev -- -H 0.0.0.0 --port 9001 &
 WEB_PID=$!
 
 echo "[run] Server PID=$SERVER_PID  Agent PID=$AGENT_PID  Web PID=$WEB_PID"
