@@ -27,6 +27,7 @@ export default function Home() {
   const [activeMonitor, setActiveMonitor] = useState<MonitorInfo | null>(null);
   const [frames,        setFrames]        = useState<ObservationFrame[]>([]);
   const [expandedFrame, setExpandedFrame] = useState<ObservationFrame | null>(null);
+  const [mainModalOpen, setMainModalOpen] = useState(false);
   const [drawMode,      setDrawMode]      = useState(false);
   const [namingRect,    setNamingRect]    = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [newFrameName,  setNewFrameName]  = useState("");
@@ -118,6 +119,18 @@ export default function Home() {
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M11 10l4 4-4 4"/>
+          </svg>
+        </ActionIcon>
+
+        <ActionIcon
+          variant="filled"
+          onClick={() => setMainModalOpen(true)}
+          title="Interact (type / keys / click)"
+          disabled={!activeMonitor}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/>
           </svg>
         </ActionIcon>
 
@@ -288,6 +301,31 @@ export default function Home() {
           onClose={() => setExpandedFrame(null)}
         />
       )}
+
+      {/* Main / full-monitor modal */}
+      {mainModalOpen && activeMonitor && (() => {
+        const mainFrame = {
+          id: "__main__",
+          name: activeMonitor.name,
+          monitor_id: activeMonitor.id,
+          x: 0,
+          y: 0,
+          width: activeMonitor.width,
+          height: activeMonitor.height,
+        };
+        return (
+          <FrameModal
+            frame={mainFrame}
+            allFrames={frames}
+            monitor={activeMonitor}
+            stream={stream}
+            sendAction={sendAction}
+            onSwitch={(f) => { setMainModalOpen(false); setExpandedFrame(f); }}
+            onDelete={() => setMainModalOpen(false)}
+            onClose={() => setMainModalOpen(false)}
+          />
+        );
+      })()}
     </Box>
   );
 }

@@ -96,7 +96,8 @@ export function FrameModal({ frame, allFrames, monitor, stream, sendAction, onSw
     const rel_y = Math.max(0, Math.min(1, framePixelY / (frame.height * scale)));
     const button = clickMode === "right" ? "right" : "left";
     const clicks = clickMode === "double" ? 2 : 1;
-    sendAction({ frame_id: frame.id, type: "mouse_click", button, clicks, rel_x, rel_y });
+    sendAction({ frame_id: frame.id, type: "mouse_click", button, clicks, rel_x, rel_y,
+      monitor_width: monitor.width, monitor_height: monitor.height });
     setClickFeedback({ x: tapX, y: tapY });
     setTimeout(() => setClickFeedback(null), 600);
   }
@@ -239,16 +240,32 @@ export function FrameModal({ frame, allFrames, monitor, stream, sendAction, onSw
         onClick={handleVideoTap}
         onContextMenu={(e) => e.preventDefault()}
         style={{
-          flex: 1, minHeight: 0, overflow: "hidden",
+          flex: 1, minHeight: 0,
           position: "relative", cursor: "crosshair", background: "#000",
+          display: "flex", alignItems: "center", justifyContent: "center",
           userSelect: "none", WebkitUserSelect: "none",
         }}
       >
-        <video
-          ref={videoRef}
-          autoPlay playsInline muted
-          style={{ position: "absolute", width: videoW, height: videoH, left: offsetX, top: offsetY, display: "block" }}
-        />
+        {/* Inner viewport — clips exactly to the frame region, no more */}
+        <div style={{
+          position: "relative",
+          width: frame.width * scale,
+          height: frame.height * scale,
+          overflow: "hidden",
+          flexShrink: 0,
+        }}>
+          <video
+            ref={videoRef}
+            autoPlay playsInline muted
+            style={{
+              position: "absolute",
+              width: videoW, height: videoH,
+              left: -frame.x * scale,
+              top:  -frame.y * scale,
+              display: "block",
+            }}
+          />
+        </div>
         {clickFeedback && (
           <div style={{
             position: "absolute", left: clickFeedback.x - 12, top: clickFeedback.y - 12,
